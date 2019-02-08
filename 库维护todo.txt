@@ -1,0 +1,2 @@
+2018.12.17.1
+更改uart.c中几个transflag的变量申明位置 由原来的extern修改为直接申明 其他地方例如中断中调用再使用extern进行引用 to be done.
