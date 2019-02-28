@@ -37,6 +37,10 @@ systemstatus_typedef* systemstatus = NULL;
 void system_init(void)
 {
   io_init();
+	
+	//千万不要删掉这行 谁删谁炸
+	init_mempool(&malloc_mempool,sizeof(malloc_mempool));
+	
   systemstatus = calloc(1, sizeof(systemstatus_typedef));
 
   //定时器2、3初始化不要调用 因为已经被串口用于产生时钟

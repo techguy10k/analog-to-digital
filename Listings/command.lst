@@ -1,0 +1,479 @@
+C51 COMPILER V9.54   COMMAND                                                               02/28/2019 18:33:07 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE COMMAND
+OBJECT MODULE PLACED IN .\Output\command.obj
+COMPILER INVOKED BY: C:\keil_v5\C51\BIN\C51.EXE user\c\command.c OPTIMIZE(8,SPEED) BROWSE INCDIR(.\lib.h;.\user\h) DEFIN
+                    -E(USE_UART1_AS_COMMAND_CONSOLE) DEBUG OBJECTEXTEND PRINT(.\Listings\command.lst) TABS(2) OBJECT(.\Output\command.obj)
+
+line level    source
+
+   1          #include"STC15.h"
+   2          #include"command.h"
+   3          #include"delay.h"
+   4          #include"uart.h"
+   5          #include"eeprom.h"
+   6          #include"adc.h"
+   7          #include"mt8880.h"
+   8          #include"string.h"
+   9          #include"stdlib.h"
+  10          #include"io.h"
+  11          #include"INTRINS.h"
+  12          #include"user_timer.h"
+  13          #include"pro.h"
+  14          
+  15          extern systemstatus_typedef* systemstatus;
+  16          
+  17          extern unsigned char uart1_rec;
+  18          extern unsigned char uart3_rec;
+  19          extern unsigned char console_rec;
+  20          
+  21          extern bit console_recflag;
+  22          
+  23          unsigned char *cmd_input = NULL;
+  24          
+  25          extern bit uart1_transflag, uart3_transflag;
+  26          
+  27          extern xdata unsigned int mt8880_send_countup = 0x00;
+  28          extern xdata unsigned int systick_very_low_tick_counter;
+  29          extern xdata unsigned int short_string_counter;
+  30          
+  31          unsigned char int_to_ascii(unsigned int input);
+  32          
+  33          void command(unsigned char* cmd_input)
+  34          {
+  35   1        unsigned char* mt8880_short_string = NULL;
+  36   1        xdata unsigned int mt8880_short_string_input_counter = 0;
+  37   1      
+  38   1        if(cmd_input != NULL)
+  39   1          {
+  40   2      
+  41   2            if((strcmp("reboot", cmd_input)) == 0)
+  42   2              {
+  43   3                send_string_to_console("Reboot!\n");
+  44   3                delayms(1500);
+  45   3                IAP_CONTR = 0x60;
+  46   3                free(cmd_input);
+  47   3                while(1);
+  48   3              }
+  49   2      
+  50   2      
+  51   2            if((strcmp("mt8880 send byte", cmd_input)) == 0)
+  52   2              {
+  53   3                send_string_to_console("input\n");
+  54   3                console_rec = 0x00;
+C51 COMPILER V9.54   COMMAND                                                               02/28/2019 18:33:07 PAGE 2   
+
+  55   3                while(console_recflag == 0);
+  56   3                console_recflag = 0;
+  57   3                send_string_to_console("mt8880 sending bytes!\n");
+  58   3      
+  59   3                mt8880_send_sequence_byte(&console_rec, 0x01);
+  60   3      
+  61   3                send_string_to_console("mt8880 tone sent!\n");
+  62   3                console_rec = 0x00;
+  63   3                free(cmd_input);
+  64   3                
+  65   3                systemstatus->system_state = system_state_listen;
+  66   3                return;
+  67   3              }
+  68   2      
+  69   2            if((strcmp("hc05 on", cmd_input)) == 0)
+  70   2              {
+  71   3                hc05_cmd(set_bit);
+  72   3                send_string_to_console("HC50 ON\n");
+  73   3                free(cmd_input);
+  74   3                
+  75   3                systemstatus->system_state = system_state_listen;
+  76   3                return;
+  77   3              }
+  78   2      
+  79   2      
+  80   2            if((strcmp("hc05 off", cmd_input)) == 0)
+  81   2              {
+  82   3                hc05_cmd(reset_bit);
+  83   3                send_string_to_console("HC50 OFF\n");
+  84   3                free(cmd_input);
+  85   3                
+  86   3                systemstatus->system_state = system_state_listen;
+  87   3                return;
+  88   3              }
+  89   2      
+  90   2      
+  91   2            if((strcmp("pd mode", cmd_input)) == 0)
+  92   2              {
+  93   3                send_string_to_console("powerdown!\n");
+  94   3                delayms(2000);
+  95   3                hc05_cmd(reset_bit);
+  96   3                //关闭ADC电源，关闭蓝牙电源，关闭TL431电源，晶体管进入off状态
+  97   3                //由于mt8880工作需要tclko4工作 所以实际上此模式不可用
+  98   3                free(cmd_input);
+  99   3                PCON = 0x02;
+ 100   3                _nop_();
+ 101   3                _nop_();
+ 102   3                
+ 103   3                systemstatus->system_state = system_state_listen;
+ 104   3                return;
+ 105   3              }
+ 106   2      
+ 107   2      
+ 108   2      
+ 109   2            if((strcmp("idle mode", cmd_input)) == 0)
+ 110   2              {
+ 111   3                send_string_to_console("Idle mode!\n");
+ 112   3                delayms(2000);
+ 113   3                hc05_cmd(reset_bit);
+ 114   3                timer0_cmd(reset_bit);
+ 115   3                vref_vcc = 0;
+ 116   3                //关闭T0中断，关闭蓝牙电源，关闭TL431电源，晶体管进入off状态
+C51 COMPILER V9.54   COMMAND                                                               02/28/2019 18:33:07 PAGE 3   
+
+ 117   3                //此模式1mA左右功耗
+ 118   3                free(cmd_input);
+ 119   3                
+ 120   3                delayms(1000);
+ 121   3                
+ 122   3                _nop_();
+ 123   3                _nop_();
+ 124   3                PCON = 0x01;
+ 125   3                _nop_();
+ 126   3                _nop_();
+ 127   3      
+ 128   3                timer0_cmd(set_bit); //记得开启否则无法喂狗
+ 129   3                vref_vcc = 1;
+ 130   3      
+ 131   3                send_string_to_console("Idle mode out!\n");
+ 132   3                
+ 133   3                systemstatus->system_state = system_state_listen;
+ 134   3                return;
+ 135   3              }
+ 136   2      
+ 137   2      
+ 138   2            /*
+ 139   2              测试用数据发送
+ 140   2            */
+ 141   2            if((strcmp("send", cmd_input)) == 0)
+ 142   2              {
+ 143   3                send_string_to_console("mt8880 send string!\n");
+ 144   3      
+ 145   3                mt8880_send_string("hhhhhhhhhh");
+ 146   3      
+ 147   3                send_string_to_console("mt8880 tone sent!\n");
+ 148   3      
+ 149   3                free(cmd_input);
+ 150   3                
+ 151   3                systemstatus->system_state = system_state_listen;
+ 152   3                return;
+ 153   3              }
+ 154   2      
+ 155   2              
+ 156   2            /*
+ 157   2              短报文发送 最长512个字节
+ 158   2              可以将字符获取函数与命令获取函数整合
+ 159   2              unsigned char* get_command(unsigned char* input, unsigned char max_lenth, unsigned int wait_time)
+ 160   2            */
+ 161   2            if((strcmp("send_short_string", cmd_input)) == 0)
+ 162   2              {
+ 163   3                console_recflag = 0;
+ 164   3                mt8880_short_string = calloc(515,sizeof(unsigned char));
+ 165   3                if(mt8880_short_string == NULL)
+ 166   3                {
+ 167   4                  send_string_to_console("fuck you 233\n");
+ 168   4                  while(1);
+ 169   4                }
+ 170   3                          
+ 171   3                
+ 172   3                send_string_to_console("mt8880 input:\n");
+ 173   3                
+ 174   3                console_rec = 0;
+ 175   3                console_recflag = 0;
+ 176   3                
+ 177   3                while(console_recflag == 0); //等待用户输入第一个字符
+ 178   3                short_string_counter = 0;
+C51 COMPILER V9.54   COMMAND                                                               02/28/2019 18:33:07 PAGE 4   
+
+ 179   3                
+ 180   3                while((console_rec != '\0') && (short_string_counter < 1000))
+ 181   3                {
+ 182   4                  mt8880_short_string[mt8880_short_string_input_counter] = console_rec;
+ 183   4                  console_recflag = 0;
+ 184   4                  mt8880_short_string_input_counter++;
+ 185   4      
+ 186   4                  if(short_string_counter < 1000)
+ 187   4                  {
+ 188   5                    short_string_counter = 0x00;
+ 189   5                  }
+ 190   4                
+ 191   4                  
+ 192   4                if(mt8880_short_string_input_counter > 512)
+ 193   4                  {
+ 194   5                    send_string_to_console("Over length !\n");
+ 195   5                    free(cmd_input);
+ 196   5                    free(mt8880_short_string);
+ 197   5                    console_rec = 0;
+ 198   5                    console_recflag = 0;
+ 199   5                    systemstatus->system_state = system_state_listen;
+ 200   5                    return;
+ 201   5                  }
+ 202   4                
+ 203   4                  while((console_recflag == 0) && (short_string_counter < 1000));
+ 204   4                
+ 205   4                }
+ 206   3                
+ 207   3                send_string_to_console("sending...\n");
+ 208   3                
+ 209   3                mt8880_send_string(mt8880_short_string);
+ 210   3                
+ 211   3                send_string_to_console("mt8880 tone sent!\n");
+ 212   3      
+ 213   3                free(cmd_input);
+ 214   3                free(mt8880_short_string);
+ 215   3                console_rec = 0;
+ 216   3                console_recflag = 0;          
+ 217   3                systemstatus->system_state = system_state_listen;
+ 218   3                return;
+ 219   3              }
+ 220   2               
+ 221   2              
+ 222   2      
+ 223   2            if((strcmp("bat", cmd_input)) == 0)
+ 224   2              {
+ 225   3                send_string_to_console("BAT voltage is:");
+ 226   3      
+ 227   3                send_byte_to_console(int_to_ascii(systemstatus->battery_voltage / 1000));
+ 228   3                send_byte_to_console(int_to_ascii((systemstatus->battery_voltage / 100) % 10));
+ 229   3                send_byte_to_console(int_to_ascii((systemstatus->battery_voltage % 100) / 10));
+ 230   3                send_byte_to_console(int_to_ascii(systemstatus->battery_voltage % 10));
+ 231   3      
+ 232   3                send_string_to_console("mv\n");
+ 233   3                free(cmd_input);
+ 234   3                systemstatus->system_state = system_state_listen;
+ 235   3                return;
+ 236   3              }
+ 237   2      
+ 238   2      
+ 239   2       
+ 240   2            send_string_to_console("Command incorrect !\n");
+C51 COMPILER V9.54   COMMAND                                                               02/28/2019 18:33:07 PAGE 5   
+
+ 241   2            delayms(10);
+ 242   2            console_rec = 0x00;
+ 243   2            free(cmd_input);
+ 244   2            systemstatus->system_state = system_state_listen;
+ 245   2            
+ 246   2          }
+ 247   1      }
+ 248          
+ 249          
+ 250          
+ 251          unsigned char* get_command(void)
+ 252          {
+ 253   1        unsigned char input_counter = 0x00;
+ 254   1      
+ 255   1      #ifdef USE_UART1_AS_COMMAND_CONSOLE
+ 256   1      
+ 257   1        if(console_recflag != 0)
+ 258   1          {
+ 259   2            systemstatus->system_state = system_state_command;
+ 260   2            console_recflag = 0;
+ 261   2            cmd_input = calloc(52, sizeof(char));
+ 262   2            if(cmd_input == NULL)
+ 263   2              {
+ 264   3                uart1_sendstring("No mems for input command !\n");
+ 265   3                free(cmd_input);
+ 266   3                systemstatus->system_state = system_state_listen;
+ 267   3                return NULL;
+ 268   3              }
+ 269   2      
+ 270   2            while(uart1_rec != '\0')
+ 271   2              {
+ 272   3                cmd_input[input_counter] = uart1_rec;
+ 273   3                console_recflag = 0;
+ 274   3                input_counter ++;
+ 275   3                if(input_counter > 50)
+ 276   3                  {
+ 277   4                    uart1_sendstring("Command over length !\n");
+ 278   4                    free(cmd_input);
+ 279   4                    systemstatus->system_state = system_state_listen;
+ 280   4                    return NULL;
+ 281   4                  }
+ 282   3                while(console_recflag == 0);
+ 283   3              }
+ 284   2      
+ 285   2            uart1_rec = 0x00;
+ 286   2            console_rec = 0;
+ 287   2            console_recflag = 0;
+ 288   2            return cmd_input;
+ 289   2      
+ 290   2          }
+ 291   1      
+ 292   1      #endif
+ 293   1      
+ 294   1      
+ 295   1      #ifdef USE_UART3_AS_COMMAND_CONSOLE
+              
+                if(console_recflag != 0)
+                  {
+                    systemstatus->system_state = system_state_command;
+                    console_recflag = 0;
+                    cmd_input = calloc(52, sizeof(char));
+                    if(cmd_input == NULL)
+C51 COMPILER V9.54   COMMAND                                                               02/28/2019 18:33:07 PAGE 6   
+
+                      {
+                        uart3_sendstring("No mems for input command !\n");
+                        free(cmd_input);
+                        systemstatus->system_state = system_state_listen;
+                        return NULL;
+                      }
+              
+                    while(uart3_rec != '\0')
+                      {
+                        cmd_input[input_counter] = uart3_rec;
+                        console_recflag = 0;
+                        input_counter ++;
+                        if(input_counter > 50)
+                          {
+                            uart3_sendstring("Command over length !\n");
+                            free(cmd_input);
+                            systemstatus->system_state = system_state_listen;
+                            return NULL;
+                          }
+                        while(console_recflag == 0);
+                      }
+              
+                    uart3_rec = 0x00;
+                    console_rec = 0;
+                    console_recflag = 0;
+                    return cmd_input;
+              
+                  }
+              
+              
+              #endif
+ 334   1      
+ 335   1      
+ 336   1        return NULL;
+ 337   1      }
+ 338          
+ 339          void send_string_to_console(unsigned  char* p)
+ 340          {
+ 341   1      #ifdef USE_UART1_AS_COMMAND_CONSOLE
+ 342   1      
+ 343   1        uart1_sendstring(p);
+ 344   1      
+ 345   1      #endif
+ 346   1      
+ 347   1      #ifdef USE_UART3_AS_COMMAND_CONSOLE
+              
+                uart3_sendstring(p);
+              
+              #endif
+ 352   1      
+ 353   1      }
+ 354          
+ 355          void send_byte_to_console(unsigned char data_input)
+ 356          {
+ 357   1      #ifdef USE_UART1_AS_COMMAND_CONSOLE
+ 358   1      
+ 359   1        uart1_sendbyte(data_input);
+ 360   1      
+ 361   1      #endif
+ 362   1      
+ 363   1      #ifdef USE_UART3_AS_COMMAND_CONSOLE
+              
+C51 COMPILER V9.54   COMMAND                                                               02/28/2019 18:33:07 PAGE 7   
+
+                uart3_sendbyte(data_input);
+              
+              #endif
+ 368   1      
+ 369   1      }
+ 370          
+ 371          void service(void)
+ 372          {
+ 373   1        mt8880_receive();
+ 374   1        system_1000ms_tick_mission();
+ 375   1      }
+ 376          
+ 377          unsigned char int_to_ascii(unsigned int input)
+ 378          {
+ 379   1        switch(input)
+ 380   1          {
+ 381   2          case 0:
+ 382   2            return '0';
+ 383   2          case 1:
+ 384   2            return '1';
+ 385   2          case 2:
+ 386   2            return '2';
+ 387   2          case 3:
+ 388   2            return '3';
+ 389   2          case 4:
+ 390   2            return '4';
+ 391   2          case 5:
+ 392   2            return '5';
+ 393   2          case 6:
+ 394   2            return '6';
+ 395   2          case 7:
+ 396   2            return '7';
+ 397   2          case 8:
+ 398   2            return '8';
+ 399   2          case 9:
+ 400   2            return '9';
+ 401   2          }
+ 402   1        return 'E';
+ 403   1      }
+ 404          
+ 405          void system_1000ms_tick_mission(void)
+ 406          {
+ 407   1        xdata adc_cmdtypedef* adc_cmd = NULL;
+ 408   1        
+ 409   1        systemstatus->system_state = system_state_command;
+ 410   1      
+ 411   1        if(systick_very_low_tick_counter >= 1000)
+ 412   1          {
+ 413   2            
+ 414   2            systick_very_low_tick_counter = 0;
+ 415   2            
+ 416   2            adc_cmd = calloc(1,sizeof(adc_cmdtypedef));
+ 417   2            
+ 418   2            if(adc_cmd == NULL)
+ 419   2              {
+ 420   3                send_string_to_console("Error code 2013\n");
+ 421   3                while(1);
+ 422   3              }
+ 423   2      
+ 424   2            adc_cmd->speed = adc_speed_veryslow;
+ 425   2            adc_cmd->cal = set_bit;
+ 426   2            adc_cmd->vcc = 2500;
+C51 COMPILER V9.54   COMMAND                                                               02/28/2019 18:33:07 PAGE 8   
+
+ 427   2            adc_cmd->accuracy = adc_accuracy_10bit;
+ 428   2            adc_cmd->channel = 7;
+ 429   2            systemstatus->battery_voltage = adc_on(adc_cmd);
+ 430   2      
+ 431   2            adc_cmd->cal = reset_bit;
+ 432   2            adc_cmd->channel = 5;
+ 433   2            adc_cmd->vcc = systemstatus->battery_voltage;
+ 434   2            systemstatus->battery_voltage = adc_on(adc_cmd);
+ 435   2              
+ 436   2            free(adc_cmd);
+ 437   2      
+ 438   2            systemstatus->system_state = system_state_listen;
+ 439   2          }
+ 440   1      
+ 441   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1375    ----
+   CONSTANT SIZE    =    401    ----
+   XDATA SIZE       =      2       5
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      3       7
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

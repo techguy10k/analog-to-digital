@@ -1,0 +1,107 @@
+C51 COMPILER V9.54   PRO                                                                   02/28/2019 18:33:06 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE PRO
+OBJECT MODULE PLACED IN .\Output\pro.obj
+COMPILER INVOKED BY: C:\keil_v5\C51\BIN\C51.EXE user\c\pro.c OPTIMIZE(8,SPEED) BROWSE INCDIR(.\lib.h;.\user\h) DEFINE(US
+                    -E_UART1_AS_COMMAND_CONSOLE) DEBUG OBJECTEXTEND PRINT(.\Listings\pro.lst) TABS(2) OBJECT(.\Output\pro.obj)
+
+line level    source
+
+   1          /*
+   2          *  文件名称：pro.c
+   3          *  文件作用：整个工程的主c文件
+   4          *  文件用法：无
+   5          */
+   6          #include"STC15.h"
+   7          #include"INTRINS.h"
+   8          #include"string.h"
+   9          #include"stdio.h"
+  10          
+  11          #include"pro.h"
+  12          #include"uart.h"
+  13          #include"delay.h"
+  14          #include"eeprom.h"
+  15          #include"io.h"
+  16          #include"adc.h"
+  17          #include"user_timer.h"
+  18          #include"command.h"
+  19          #include"stdlib.h"
+  20          #include"mt8880.h"
+  21          #include"exint.h"
+  22          #include"sort.h"
+  23          #include"x9c104.h"
+  24          #include"IAP15W4K32S4_IT.h"
+  25          
+  26          //内存池的建立
+  27          unsigned char xdata malloc_mempool[2048];
+  28          
+  29          
+  30          //系统状态表
+  31          systemstatus_typedef* systemstatus = NULL;
+  32          
+  33          
+  34          
+  35          //void passwd(unsigned int passwd_location);
+  36          
+  37          void system_init(void)
+  38          {
+  39   1        io_init();
+  40   1        
+  41   1        //千万不要删掉这行 谁删谁炸
+  42   1        init_mempool(&malloc_mempool,sizeof(malloc_mempool));
+  43   1        
+  44   1        systemstatus = calloc(1, sizeof(systemstatus_typedef));
+  45   1      
+  46   1        //定时器2、3初始化不要调用 因为已经被串口用于产生时钟
+  47   1        timer0_init(); //systick 1ms
+  48   1        timer4_init(); //MT8880时钟输出
+  49   1        
+  50   1        exint2_init();
+  51   1        exint0_init();
+  52   1        exint1_init();
+  53   1      
+  54   1      
+C51 COMPILER V9.54   PRO                                                                   02/28/2019 18:33:06 PAGE 2   
+
+  55   1      #ifndef USE_HARDWARE_SIMULATOR
+  56   1        uart1_init();
+  57   1      #endif
+  58   1        uart3_init();
+  59   1        delayms(100);
+  60   1        mt8880_bootup_setup();
+  61   1        delayms(300);
+  62   1      
+  63   1        hc05_cmd(reset_bit);
+  64   1      
+  65   1        send_string_to_console("Boot up!\n");
+  66   1        delayms(10);
+  67   1      //  send_string_to_console("Enter passwd(ASCII):\n");
+  68   1      //  passwd();
+  69   1      }
+  70          
+  71          void main(void)
+  72          {   
+  73   1        system_init();
+  74   1        mt8880_listen();  
+  75   1          
+  76   1        for(;;)
+  77   1        {
+  78   2          command(get_command());
+  79   2          service();
+  80   2        }
+  81   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    112    ----
+   CONSTANT SIZE    =     10    ----
+   XDATA SIZE       =   2048    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      3    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

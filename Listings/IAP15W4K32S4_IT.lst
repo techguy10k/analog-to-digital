@@ -1,0 +1,277 @@
+C51 COMPILER V9.54   IAP15W4K32S4_IT                                                       02/28/2019 18:33:06 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE IAP15W4K32S4_IT
+OBJECT MODULE PLACED IN .\Output\IAP15W4K32S4_IT.obj
+COMPILER INVOKED BY: C:\keil_v5\C51\BIN\C51.EXE user\c\IAP15W4K32S4_IT.c OPTIMIZE(8,SPEED) BROWSE INCDIR(.\lib.h;.\user\
+                    -h) DEFINE(USE_UART1_AS_COMMAND_CONSOLE) DEBUG OBJECTEXTEND PRINT(.\Listings\IAP15W4K32S4_IT.lst) TABS(2) OBJECT(.\Output
+                    -\IAP15W4K32S4_IT.obj)
+
+line level    source
+
+   1          /*
+   2          *  文件名称：IAP15W4K32S4_IT.c
+   3          *  文件作用：整个工程所有的中断服务函数都在这里写
+   4          *  文件用法：无
+   5          */
+   6          #include"IAP15W4K32S4_IT.h"
+   7          #include"STC15.h"
+   8          #include"mt8880.h"
+   9          #include"stdlib.h"
+  10          #include"user_timer.h"
+  11          #include"io.h"
+  12          #include"pro.h"
+  13          #include"adc.h"
+  14          #include"sort.h"
+  15          #include"x9c104.h"
+  16          
+  17          #define S3RI  0x01              //S3CON.0
+  18          #define S3TI  0x02              //S3CON.1
+  19          
+  20          extern systemstatus_typedef* systemstatus;
+  21          
+  22          unsigned char uart1_rec = 0;
+  23          unsigned char uart3_rec = 0;
+  24          unsigned char console_rec = 0;
+  25          
+  26          xdata unsigned int mt8880_counter = 0;
+  27          xdata unsigned int led_pwr_counter = 0;
+  28          xdata unsigned int systick_very_low_tick_counter = 0;
+  29          xdata unsigned int short_string_counter = 0;
+  30          
+  31          unsigned char mt8880_rec_raw = 0;
+  32          unsigned char mt8880_rec = 0;
+  33          
+  34          bit mt8880_get_one_byte = 0;
+  35          bit uart1_transflag = 0, uart3_transflag = 0;
+  36          bit console_recflag = 0,mt8880_recflag = 0;
+  37          
+  38          unsigned char mt8880_read_receive_data_it(void);
+  39          mt8880_status_typedef mt8880_get_status_it(void);
+  40          void delay1us_it(void);
+  41          void hc05_cmd_it(bit state);
+  42          void timer4_cmd_it(bit state);
+  43          
+  44          
+  45          void uart1_interrupt(void) interrupt 4
+  46          {
+  47   1        if (RI)
+  48   1          {
+  49   2            
+  50   2            
+  51   2            RI = 0;
+  52   2            uart1_rec = SBUF;
+  53   2      #ifdef USE_UART1_AS_COMMAND_CONSOLE
+C51 COMPILER V9.54   IAP15W4K32S4_IT                                                       02/28/2019 18:33:06 PAGE 2   
+
+  54   2            console_recflag = 1;
+  55   2            console_rec = SBUF;
+  56   2      #endif
+  57   2          }
+  58   1        if (TI)
+  59   1          {
+  60   2            TI = 0;
+  61   2            uart1_transflag = 1;
+  62   2          }
+  63   1      }
+  64          
+  65          void uart3_interrupt(void) interrupt 17
+  66          {
+  67   1        if (S3CON & S3RI)
+  68   1          {
+  69   2            S3CON &= ~S3RI;         //清除S3RI位
+  70   2            uart3_rec = S3BUF;
+  71   2      #ifdef USE_UART3_AS_COMMAND_CONSOLE
+                    console_recflag = 1;
+                    console_rec = S3BUF;
+              #endif
+  75   2          }
+  76   1        if (S3CON & S3TI)
+  77   1          {
+  78   2            S3CON &= ~S3TI;         //清除S3TI位
+  79   2            uart3_transflag = 1;
+  80   2          }
+  81   1      }
+  82          
+  83          void systick_timer0_interrupt(void) interrupt 1  //1ms per interrupt
+  84          {
+  85   1        mt8880_counter ++;
+  86   1        led_pwr_counter ++;
+  87   1        systick_very_low_tick_counter ++;
+  88   1        short_string_counter ++;
+  89   1      
+  90   1        WDT_CONTR = 0x17;
+  91   1      
+  92   1        if(led_pwr_counter > 5000)
+  93   1          {
+  94   2            LED_PWR = 0;
+  95   2          }
+  96   1        else
+  97   1          {
+  98   2            LED_PWR = 1;
+  99   2          }
+ 100   1      
+ 101   1        if(led_pwr_counter > 5200)
+ 102   1          led_pwr_counter = 0;
+ 103   1      
+ 104   1      }
+ 105          
+ 106          
+ 107          void mt8880_irq_int2_interrupt(void) interrupt 10
+ 108          {
+ 109   1        mt8880_status_typedef mt8880_status;
+ 110   1      
+ 111   1        INT_CLKO &= 0xef; //关中断允许位的时候会顺便清除中断标志
+ 112   1      
+ 113   1      
+ 114   1        mt8880_status = mt8880_get_status_it();
+ 115   1      
+C51 COMPILER V9.54   IAP15W4K32S4_IT                                                       02/28/2019 18:33:06 PAGE 3   
+
+ 116   1        if((mt8880_status.mt8880_irq == 0) || (systemstatus->system_state == system_state_transmit) || (systemst
+             -atus->system_state == system_state_command))
+ 117   1          {
+ 118   2            INT_CLKO |= 0x10;
+ 119   2            return;
+ 120   2          }
+ 121   1      
+ 122   1        if(mt8880_status.mt8880_rec_data_full == 1)
+ 123   1          {
+ 124   2            systemstatus->system_state = system_state_recieve;
+ 125   2            mt8880_recflag = 1;
+ 126   2          }
+ 127   1      
+ 128   1        INT_CLKO |= 0x10; //程序结束再打开中断
+ 129   1      
+ 130   1      }
+ 131          
+ 132          
+ 133          void int0_interrupt(void) interrupt 0
+ 134          {
+ 135   1        hc05_cmd_it(set_bit);
+ 136   1      }
+ 137          
+ 138          mt8880_status_typedef mt8880_get_status_it(void)
+ 139          {
+ 140   1        unsigned char data_read;
+ 141   1        mt8880_status_typedef mt8880_status;
+ 142   1      
+ 143   1        T4T3M &= 0xef; //关闭时钟
+ 144   1      
+ 145   1        P2 = 0Xff;
+ 146   1        rs0 = 1;
+ 147   1        rw = 1;
+ 148   1        clk = 0;
+ 149   1        delay1us_it();
+ 150   1      
+ 151   1        cs = 0;
+ 152   1        clk = 1;
+ 153   1        delay1us_it();
+ 154   1        data_read = P2;
+ 155   1        clk = 0;
+ 156   1        delay1us_it();
+ 157   1        cs = 1;
+ 158   1      
+ 159   1        data_read = data_read >> 4;
+ 160   1      
+ 161   1        if(data_read & 0x01)
+ 162   1          mt8880_status.mt8880_irq = 1;
+ 163   1        if(data_read & 0x02)
+ 164   1          mt8880_status.mt8880_trans_data_empty = 1;
+ 165   1        if(data_read & 0x04)
+ 166   1          mt8880_status.mt8880_rec_data_full = 1;
+ 167   1        if(data_read & 0x08)
+ 168   1          mt8880_status.mt8880_delayed_steering = 1;
+ 169   1      
+ 170   1        T4T3M |= 0x10;
+ 171   1      
+ 172   1        return mt8880_status;
+ 173   1      }
+ 174          
+ 175          void int1_interrupt(void) interrupt 2 //蓝牙状态脚
+ 176          {
+C51 COMPILER V9.54   IAP15W4K32S4_IT                                                       02/28/2019 18:33:06 PAGE 4   
+
+ 177   1      
+ 178   1      }
+ 179          
+ 180          
+ 181          void delay1us_it(void)  //@30Mhz
+ 182          {
+ 183   1        unsigned char i;
+ 184   1      
+ 185   1        i = 5;
+ 186   1        while (--i);
+ 187   1      
+ 188   1      }
+ 189          
+ 190          unsigned char mt8880_read_receive_data_it(void)
+ 191          {
+ 192   1        unsigned char data_read;
+ 193   1      
+ 194   1        timer4_cmd_it(reset_bit);
+ 195   1      
+ 196   1        clk = 0;
+ 197   1      
+ 198   1        P2 = 0Xff;
+ 199   1        rs0 = 0;
+ 200   1        rw = 1;
+ 201   1      
+ 202   1        cs = 0;
+ 203   1        clk = 1;
+ 204   1        delay1us_it();
+ 205   1        data_read = P2;
+ 206   1        clk = 0;
+ 207   1        delay1us_it();
+ 208   1        cs = 1;
+ 209   1      
+ 210   1        data_read = data_read >> 4;
+ 211   1      
+ 212   1        timer4_cmd_it(set_bit);
+ 213   1      
+ 214   1        return data_read;
+ 215   1      }
+ 216          
+ 217          
+ 218          void hc05_cmd_it(bit state)
+ 219          {
+ 220   1        if(state == 1)
+ 221   1          {
+ 222   2            hc05_en = 1;
+ 223   2          }
+ 224   1        else
+ 225   1          {
+ 226   2            hc05_en = 0;
+ 227   2          }
+ 228   1      }
+ 229          
+ 230          
+ 231          void timer4_cmd_it(bit state)
+ 232          {
+ 233   1        if(state == set_bit)
+ 234   1          {
+ 235   2            T4T3M |= 0x10;
+ 236   2          }
+ 237   1        else
+ 238   1          {
+C51 COMPILER V9.54   IAP15W4K32S4_IT                                                       02/28/2019 18:33:06 PAGE 5   
+
+ 239   2            T4T3M &= 0xef;
+ 240   2          }
+ 241   1      
+ 242   1      }
+ 243          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    504    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      8    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      5      10
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      5       2
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

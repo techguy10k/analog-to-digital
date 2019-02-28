@@ -1,0 +1,17 @@
+".\Output\STARTUP.obj",
+".\Output\pro.obj",
+".\Output\IAP15W4K32S4_IT.obj",
+".\Output\uart.obj",
+".\Output\eeprom.obj",
+".\Output\delay.obj",
+".\Output\io.obj",
+".\Output\adc.obj",
+".\Output\mt8880.obj",
+".\Output\user_timer.obj",
+".\Output\command.obj",
+".\Output\exint.obj",
+".\Output\sort.obj",
+".\Output\x9c104.obj" 
+TO ".\Output\pro" 
+PRINT(".\Listings\pro.m51") RAMSIZE(256) 
+DISABLEWARNING (16) 
